@@ -579,6 +579,10 @@ project(':streams') {
     jar {
         dependsOn 'copyDependantLibs'
     }
+
+    systemTestLibs {
+        dependsOn testJar
+    }
 }
 
 project(':streams:examples') {
