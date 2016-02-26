@@ -19,7 +19,6 @@ package org.apache.kafka.streams.processor.internals;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.streams.processor.TimestampExtractor;
 
 import java.util.ArrayDeque;
@@ -78,7 +77,7 @@ public class RecordQueue {
             Object value = source.deserializeValue(rawRecord.topic(), rawRecord.value());
 
             ConsumerRecord<Object, Object> record = new ConsumerRecord<>(rawRecord.topic(), rawRecord.partition(),
-                rawRecord.offset(), rawRecord.timestamp(), TimestampType.CREATE_TIME, key, value);
+                rawRecord.offset(), key, value);
             long timestamp = timestampExtractor.extract(record);
 
             StampedRecord stampedRecord = new StampedRecord(record, timestamp);
