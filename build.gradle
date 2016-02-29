@@ -548,6 +548,7 @@ project(':tools') {
 }
 
 project(':streams') {
+    apply plugin: 'checkstyle'
     archivesBaseName = "kafka-streams"
 
     dependencies {
@@ -560,6 +561,18 @@ project(':streams') {
 
         testCompile project(':clients').sourceSets.test.output
         testCompile "$junit"
+    }
+
+    task testJar(type: Jar) {
+        classifier = 'test'
+        from sourceSets.test.output
+    }
+
+    test {
+        testLogging {
+            events "passed", "skipped", "failed"
+            exceptionFormat = 'full'
+        }
     }
 
     javadoc {
@@ -580,9 +593,18 @@ project(':streams') {
         dependsOn 'copyDependantLibs'
     }
 
-    systemTestLibs {
-        dependsOn testJar
+    artifacts {
+        archives testJar
     }
+
+    configurations {
+        archives.extendsFrom (testCompile)
+    }
+
+    checkstyle {
+        configFile = new File(rootDir, "checkstyle/checkstyle.xml")
+    }
+    test.dependsOn('checkstyleMain', 'checkstyleTest')
 }
 
 project(':streams:examples') {
