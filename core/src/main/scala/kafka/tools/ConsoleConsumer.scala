@@ -28,6 +28,7 @@ import kafka.metrics.KafkaMetricsReporter
 import kafka.utils._
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.common.errors.WakeupException
+import org.apache.kafka.common.serialization.{Deserializer, ByteArrayDeserializer}
 import org.apache.kafka.common.utils.Utils
 
 import scala.collection.JavaConversions._
@@ -343,6 +344,9 @@ class DefaultMessageFormatter extends MessageFormatter {
   var keySeparator = "\t".getBytes
   var lineSeparator = "\n".getBytes
 
+  var keyDeserializer: Option[Deserializer[_]] = None
+  var valueDeserializer: Option[Deserializer[_]] = None
+
   override def init(props: Properties) {
     if (props.containsKey("print.key"))
       printKey = props.getProperty("print.key").trim.toLowerCase.equals("true")
@@ -350,15 +354,25 @@ class DefaultMessageFormatter extends MessageFormatter {
       keySeparator = props.getProperty("key.separator").getBytes
     if (props.containsKey("line.separator"))
       lineSeparator = props.getProperty("line.separator").getBytes
+    // Note that `toString` will be called on the instance returned by `Deserializer.deserialize`
+    if (props.containsKey("key.deserializer"))
+      keyDeserializer = Some(Class.forName(props.getProperty("key.deserializer")).newInstance().asInstanceOf[Deserializer[_]])
+    // Note that `toString` will be called on the instance returned by `Deserializer.deserialize`
+    if (props.containsKey("value.deserializer"))
+      valueDeserializer = Some(Class.forName(props.getProperty("value.deserializer")).newInstance().asInstanceOf[Deserializer[_]])
   }
 
   def writeTo(key: Array[Byte], value: Array[Byte], output: PrintStream) {
-    if (printKey) {
-      output.write(if (key == null) "null".getBytes() else key)
-      output.write(keySeparator)
+
+    def write(deserializer: Option[Deserializer[_]], sourceBytes: Array[Byte], separator: Array[Byte]) {
+      val nonNullBytes = Option(sourceBytes).getOrElse("null".getBytes)
+      val convertedBytes = deserializer.map(_.deserialize(null, nonNullBytes).toString.getBytes).getOrElse(nonNullBytes)
+      output.write(convertedBytes)
+      output.write(separator)
     }
-    output.write(if (value == null) "null".getBytes() else value)
-    output.write(lineSeparator)
+
+    if (printKey) write(keyDeserializer, key, keySeparator)
+    write(valueDeserializer, value, lineSeparator)
   }
 }
 

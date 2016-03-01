@@ -15,13 +15,23 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.streams.kstream.internals;
+package org.apache.kafka.streams.smoketest;
 
-import org.apache.kafka.streams.processor.ProcessorSupplier;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.streams.processor.TimestampExtractor;
 
-public interface KTableProcessorSupplier<K, V, T> extends ProcessorSupplier<K, Change<V>> {
+public class TestTimestampExtractor implements TimestampExtractor {
 
-    KTableValueGetterSupplier<K, T> view();
+    private final long base = SmokeTestUtil.START_TIME;
 
-    void enableSendingOldValues();
+    @Override
+    public long extract(ConsumerRecord<Object, Object> record) {
+        switch (record.topic()) {
+            case "data":
+                return base + (Integer) record.value();
+            default:
+                return System.currentTimeMillis();
+        }
+    }
+
 }

@@ -342,6 +342,7 @@ public class Sender implements Runnable {
                 handleProduceResponse(response, recordsByPartition, time.milliseconds());
             }
         };
+
         return new ClientRequest(now, acks != 0, send, callback);
     }
 
