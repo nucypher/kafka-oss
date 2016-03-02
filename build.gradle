@@ -614,6 +614,10 @@ project(':streams') {
         configFile = new File(rootDir, "checkstyle/checkstyle.xml")
     }
     test.dependsOn('checkstyleMain', 'checkstyleTest')
+
+    systemTestLibs {
+        dependsOn testJar
+    }
 }
 
 project(':streams:examples') {
@@ -799,6 +803,7 @@ project(':connect:runtime') {
   dependencies {
     compile project(':connect:api')
     compile project(':clients')
+    compile project(':tools')
     compile "$slf4japi"
 
     compile "org.eclipse.jetty:jetty-server:$jetty_version"

@@ -214,6 +214,8 @@ class WorkerSourceTask implements WorkerTask {
     public boolean commitOffsets() {
         long commitTimeoutMs = workerConfig.getLong(WorkerConfig.OFFSET_COMMIT_TIMEOUT_MS_CONFIG);
 
+        log.debug("{} Committing offsets", this);
+
         long started = time.milliseconds();
         long timeout = started + commitTimeoutMs;
 
@@ -301,7 +303,7 @@ class WorkerSourceTask implements WorkerTask {
         }
 
         finishSuccessfulFlush();
-        log.debug("Finished {} commitOffsets successfully in {} ms",
+        log.info("Finished {} commitOffsets successfully in {} ms",
                 this, time.milliseconds() - started);
         return true;
     }

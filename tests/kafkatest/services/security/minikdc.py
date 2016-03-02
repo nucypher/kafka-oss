@@ -36,9 +36,10 @@ class MiniKdc(Service):
     LOCAL_KEYTAB_FILE = "/tmp/" + str(uuid.uuid4().get_hex()) + "_keytab"
     LOCAL_KRB5CONF_FILE = "/tmp/" + str(uuid.uuid4().get_hex()) + "_krb5.conf"
 
-    def __init__(self, context, kafka_nodes):
+    def __init__(self, context, kafka_nodes, extra_principals = ""):
         super(MiniKdc, self).__init__(context, 1)
         self.kafka_nodes = kafka_nodes
+        self.extra_principals = extra_principals
 
 
     def start_node(self, node):
@@ -50,7 +51,7 @@ class MiniKdc(Service):
         self.logger.info(props_file)
 
         kafka_principals = ' '.join(['kafka/' + kafka_node.account.hostname for kafka_node in self.kafka_nodes])
-        principals = 'client ' + kafka_principals
+        principals = 'client ' + kafka_principals + self.extra_principals
         self.logger.info("Starting MiniKdc with principals " + principals)
 
         lib_dir = "/opt/%s/core/build/dependant-testlibs" % kafka_dir(node)
