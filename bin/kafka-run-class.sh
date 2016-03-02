@@ -22,17 +22,13 @@ fi
 
 base_dir=$(dirname $0)/..
 
-if [ -z "$SCALA_VERSION" ]; then
-	SCALA_VERSION=2.10.5
-fi
-
 if [ -z "$SCALA_BINARY_VERSION" ]; then
 	SCALA_BINARY_VERSION=2.10
 fi
 
 # run ./gradlew copyDependantLibs to get all dependant jars in a local dir
 shopt -s nullglob
-for dir in $base_dir/core/build/dependant-libs-${SCALA_VERSION}*;
+for dir in $base_dir/core/build/dependant-libs*;
 do
   CLASSPATH=$CLASSPATH:$dir/*
 done
@@ -57,7 +53,7 @@ do
   CLASSPATH=$CLASSPATH:$file
 done
 
-for file in $base_dir/streams/build/dependant-libs-${SCALA_VERSION}/rocksdb*.jar;
+for file in $base_dir/streams/build/dependant-libs/rocksdb*.jar;
 do
   CLASSPATH=$CLASSPATH:$file
 done
@@ -67,7 +63,7 @@ do
   CLASSPATH=$CLASSPATH:$file
 done
 
-for dir in $base_dir/tools/build/dependant-libs-${SCALA_VERSION}*;
+for dir in $base_dir/tools/build/dependant-libs*;
 do
   CLASSPATH=$CLASSPATH:$dir/*
 done
