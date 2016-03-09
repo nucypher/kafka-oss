@@ -231,7 +231,7 @@ public class StreamPartitionAssignor implements PartitionAssignor, Configurable 
             log.debug("Starting to validate internal source topics in partition assignor.");
 
             for (Map.Entry<String, Set<TaskId>> entry : internalSourceTopicToTaskIds.entrySet()) {
-                String topic = streamThread.jobId + "-" + entry.getKey();
+                String topic = entry.getKey();
 
                 // should have size 1 only
                 int numPartitions = -1;
