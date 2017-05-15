@@ -29,8 +29,8 @@ Vagrantfile.local
 /logs
 .DS_Store
 
-config/server-*
-config/zookeeper-*
+#config/server-*
+#config/zookeeper-*
 core/data/*
 gradle/wrapper/*
 
@@ -42,3 +42,11 @@ tests/venv
 .cache
 
 docs/generated/
+
+*.class
+clients/bin
+connect/**/bin
+log4j-appender/bin
+streams/bin
+tools/bin
+core/bin

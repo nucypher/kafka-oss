@@ -18,6 +18,7 @@
 package kafka.server
 
 import java.util.Properties
+
 import kafka.api.{ApiVersion, KAFKA_0_10_0_IV1}
 import kafka.cluster.EndPoint
 import kafka.consumer.ConsumerConfig
@@ -34,6 +35,7 @@ import org.apache.kafka.common.record.TimestampType
 
 import scala.collection.{JavaConverters, Map, immutable}
 import JavaConverters._
+import kafka.nucypher.NuCypherConfigs
 
 object Defaults {
   /** ********* Zookeeper Configuration ***********/
@@ -185,6 +187,14 @@ object Defaults {
   val SaslKerberosTicketRenewJitter = SaslConfigs.DEFAULT_KERBEROS_TICKET_RENEW_JITTER
   val SaslKerberosMinTimeBeforeRelogin = SaslConfigs.DEFAULT_KERBEROS_MIN_TIME_BEFORE_RELOGIN
   val SaslKerberosPrincipalToLocalRules = SaslConfigs.DEFAULT_SASL_KERBEROS_PRINCIPAL_TO_LOCAL_RULES
+
+  /** ********* NuCypher configuration ****************/
+  val NuCypherCacheReEncryptionKeysCapacity =
+    NuCypherConfigs.NUCYPHER_CACHE_RE_ENCRYPTION_KEYS_CAPACITY_DEFAULT
+  val NuCypherCacheGranularReEncryptionKeysCapacity =
+    NuCypherConfigs.NUCYPHER_CACHE_GRANULAR_RE_ENCRYPTION_KEYS_CAPACITY_DEFAULT
+  val NuCypherCacheEDEKCapacity = NuCypherConfigs.NUCYPHER_CACHE_EDEK_CAPACITY_DEFAULT
+  val NuCypherCacheChannelsCapacity = NuCypherConfigs.NUCYPHER_CACHE_CHANNELS_CAPACITY_DEFAULT
 
 }
 
@@ -355,6 +365,15 @@ object KafkaConfig {
   val SaslKerberosTicketRenewJitterProp = SaslConfigs.SASL_KERBEROS_TICKET_RENEW_JITTER
   val SaslKerberosMinTimeBeforeReloginProp = SaslConfigs.SASL_KERBEROS_MIN_TIME_BEFORE_RELOGIN
   val SaslKerberosPrincipalToLocalRulesProp = SaslConfigs.SASL_KERBEROS_PRINCIPAL_TO_LOCAL_RULES
+
+  /** ********* NuCypher configuration ****************/
+  val NuCypherReEncryptionKeysPathProp = NuCypherConfigs.NUCYPHER_RE_ENCRYPTION_KEYS_PATH
+  val NuCypherCacheReEncryptionKeysCapacityProp =
+    NuCypherConfigs.NUCYPHER_CACHE_RE_ENCRYPTION_KEYS_CAPACITY
+  val NuCypherCacheGranularReEncryptionKeysCapacityProp =
+    NuCypherConfigs.NUCYPHER_CACHE_GRANULAR_RE_ENCRYPTION_KEYS_CAPACITY
+  val NuCypherCacheEDEKCapacityProp = NuCypherConfigs.NUCYPHER_CACHE_EDEK_CAPACITY
+  val NuCypherCacheChannelsCapacityProp = NuCypherConfigs.NUCYPHER_CACHE_CHANNELS_CAPACITY
 
   /* Documentation */
   /** ********* Zookeeper Configuration ***********/
@@ -577,6 +596,16 @@ object KafkaConfig {
   val SaslKerberosMinTimeBeforeReloginDoc = SaslConfigs.SASL_KERBEROS_MIN_TIME_BEFORE_RELOGIN_DOC
   val SaslKerberosPrincipalToLocalRulesDoc = SaslConfigs.SASL_KERBEROS_PRINCIPAL_TO_LOCAL_RULES_DOC
 
+  /** ********* NuCypher configuration ****************/
+  val NuCypherReEncryptionKeysPathDoc = NuCypherConfigs.NUCYPHER_RE_ENCRYPTION_KEYS_PATH_DOC
+  val NuCypherCacheReEncryptionKeysCapacityDoc =
+    NuCypherConfigs.NUCYPHER_CACHE_RE_ENCRYPTION_KEYS_CAPACITY_DOC
+  val NuCypherCacheGranularReEncryptionKeysCapacityDoc =
+  NuCypherConfigs.NUCYPHER_CACHE_GRANULAR_RE_ENCRYPTION_KEYS_CAPACITY_DOC
+  val NuCypherCacheEDEKCapacityDoc = NuCypherConfigs.NUCYPHER_CACHE_EDEK_CAPACITY_DOC
+  val NuCypherCacheChannelsCapacityDoc = NuCypherConfigs.NUCYPHER_CACHE_CHANNELS_CAPACITY_DOC
+
+
   private val configDef = {
     import ConfigDef.Importance._
     import ConfigDef.Range._
@@ -754,6 +783,16 @@ object KafkaConfig {
       .define(SaslKerberosMinTimeBeforeReloginProp, LONG, Defaults.SaslKerberosMinTimeBeforeRelogin, MEDIUM, SaslKerberosMinTimeBeforeReloginDoc)
       .define(SaslKerberosPrincipalToLocalRulesProp, LIST, Defaults.SaslKerberosPrincipalToLocalRules, MEDIUM, SaslKerberosPrincipalToLocalRulesDoc)
 
+      /** ********* NuCypher configuration ****************/
+      .define(NuCypherReEncryptionKeysPathProp, STRING, null, HIGH, NuCypherReEncryptionKeysPathDoc)
+      .define(NuCypherCacheReEncryptionKeysCapacityProp, INT, Defaults.NuCypherCacheReEncryptionKeysCapacity,
+        LOW, NuCypherCacheReEncryptionKeysCapacityDoc)
+      .define(NuCypherCacheGranularReEncryptionKeysCapacityProp,
+        INT, Defaults.NuCypherCacheGranularReEncryptionKeysCapacity,
+        LOW, NuCypherCacheReEncryptionKeysCapacityDoc)
+      .define(NuCypherCacheEDEKCapacityProp, INT, Defaults.NuCypherCacheEDEKCapacity, LOW, NuCypherCacheEDEKCapacityDoc)
+      .define(NuCypherCacheChannelsCapacityProp, INT, Defaults.NuCypherCacheChannelsCapacity,
+        LOW, NuCypherCacheChannelsCapacityDoc)
   }
 
   def configNames() = {
@@ -965,6 +1004,14 @@ class KafkaConfig(val props: java.util.Map[_, _], doLog: Boolean) extends Abstra
   val listeners = getListeners
   val advertisedListeners = getAdvertisedListeners
 
+  /** ********* NuCypher configuration ****************/
+  val nuCypherReEncryptionKeysPath = getString(KafkaConfig.NuCypherReEncryptionKeysPathProp)
+  val nuCypherCacheReEncryptionKeysCapacity = getInt(KafkaConfig.NuCypherCacheReEncryptionKeysCapacityProp)
+  val nuCypherCacheGranularReEncryptionKeysCapacity =
+    getInt(KafkaConfig.NuCypherCacheGranularReEncryptionKeysCapacityProp)
+  val nuCypherCacheEDEKCapacity = getInt(KafkaConfig.NuCypherCacheEDEKCapacityProp)
+  val nuCypherCacheChannelsCapacity = getInt(KafkaConfig.NuCypherCacheChannelsCapacityProp)
+
   private def getLogRetentionTimeMillis: Long = {
     val millisInMinute = 60L * 1000L
     val millisInHour = 60L * millisInMinute
@@ -1065,5 +1112,17 @@ class KafkaConfig(val props: java.util.Map[_, _], doLog: Boolean) extends Abstra
       s"Only GSSAPI mechanism is supported for inter-broker communication with SASL when inter.broker.protocol.version is set to $interBrokerProtocolVersionString")
     require(!interBrokerUsesSasl || saslEnabledMechanisms.contains(saslMechanismInterBrokerProtocol),
       s"${KafkaConfig.SaslMechanismInterBrokerProtocolProp} must be included in ${KafkaConfig.SaslEnabledMechanismsProp} when SASL is used for inter-broker communication")
+
+    /******* NuCypher *******/
+    require(nuCypherReEncryptionKeysPath == null || NuCypherConfigs.validatePath(nuCypherReEncryptionKeysPath),
+      s"${KafkaConfig.NuCypherReEncryptionKeysPathProp} must be valid ZooKeeper path")
+    require(nuCypherCacheReEncryptionKeysCapacity > 0,
+      s"${KafkaConfig.NuCypherCacheReEncryptionKeysCapacityProp} must be greater than 0")
+    require(nuCypherCacheGranularReEncryptionKeysCapacity > 0,
+      s"${KafkaConfig.NuCypherCacheGranularReEncryptionKeysCapacityProp} must be greater than 0")
+    require(nuCypherCacheEDEKCapacity > 0,
+      s"${KafkaConfig.NuCypherCacheEDEKCapacityProp} must be greater than 0")
+    require(nuCypherCacheChannelsCapacity > 0,
+      s"${KafkaConfig.NuCypherCacheChannelsCapacityProp} must be greater than 0")
   }
 }
