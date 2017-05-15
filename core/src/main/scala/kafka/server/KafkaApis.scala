@@ -59,6 +59,8 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.util.{Failure, Success, Try}
 
+import kafka.nucypher.ReEncryptionHandler
+
 /**
  * Logic to handle the various Kafka requests
  */
@@ -80,6 +82,8 @@ class KafkaApis(val requestChannel: RequestChannel,
                 time: Time) extends Logging {
 
   this.logIdent = "[KafkaApi-%d] ".format(brokerId)
+  
+  private val reEncryptionHandler = ReEncryptionHandler(zkUtils, config)
 
   def close() {
     quotas.shutdown()
@@ -395,16 +399,20 @@ class KafkaApis(val requestChannel: RequestChannel,
         authorize(request.session, Describe, new Resource(Topic, tp.topic)) && metadataCache.contains(tp.topic)
       }
 
-    val (authorizedRequestInfo, unauthorizedForWriteRequestInfo) = existingAndAuthorizedForDescribeTopics.partition {
+    val (authorizedForWriteRequestInfo, unauthorizedForWriteRequestInfo) = existingAndAuthorizedForDescribeTopics.partition {
       case (tp, _) => authorize(request.session, Write, new Resource(Topic, tp.topic))
     }
+
+    val (messagesPerPartition, errorPartitionResponse) =
+      reEncryptionHandler.reEncryptProducer(authorizedForWriteRequestInfo, request.session.principal)
 
     // the callback for sending a produce response
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]) {
 
       val mergedResponseStatus = responseStatus ++
         unauthorizedForWriteRequestInfo.mapValues(_ => new PartitionResponse(Errors.TOPIC_AUTHORIZATION_FAILED)) ++
-        nonExistingOrUnauthorizedForDescribeTopics.mapValues(_ => new PartitionResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION))
+        nonExistingOrUnauthorizedForDescribeTopics.mapValues(_ => new PartitionResponse(Errors.UNKNOWN_TOPIC_OR_PARTITION)) ++
+        errorPartitionResponse
 
       var errorInResponse = false
 
@@ -453,7 +461,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         produceResponseCallback)
     }
 
-    if (authorizedRequestInfo.isEmpty)
+    if (messagesPerPartition.isEmpty)
       sendResponseCallback(Map.empty)
     else {
       val internalTopicsAllowed = request.header.clientId == AdminUtils.AdminClientId
@@ -464,7 +472,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         requiredAcks = produceRequest.acks,
         internalTopicsAllowed = internalTopicsAllowed,
         isFromClient = true,
-        entriesPerPartition = authorizedRequestInfo,
+        entriesPerPartition = messagesPerPartition,
         responseCallback = sendResponseCallback)
 
       // if the request is put into the purgatory, it will have a held reference and hence cannot be garbage collected;
@@ -539,7 +547,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         }
       }
 
-      val mergedPartitionData = partitionData ++ unauthorizedForReadPartitionData ++ nonExistingOrUnauthorizedForDescribePartitionData
+      val mergedPartitionData = reEncryptionHandler.reencryptConsumer(partitionData, request.session.principal) ++ 
+        unauthorizedForReadPartitionData ++ nonExistingOrUnauthorizedForDescribePartitionData
 
       val fetchedPartitionData = new util.LinkedHashMap[TopicPartition, FetchResponse.PartitionData]()
 

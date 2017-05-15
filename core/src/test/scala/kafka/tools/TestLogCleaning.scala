@@ -152,7 +152,7 @@ object TestLogCleaning {
     }
   }
 
-  def lineCount(file: File): Int = io.Source.fromFile(file).getLines.size
+  def lineCount(file: File): Int = scala.io.Source.fromFile(file).getLines.size
 
   def validateOutput(producedDataFile: File, consumedDataFile: File) {
     val producedReader = externalSort(producedDataFile)
