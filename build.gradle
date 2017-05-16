@@ -396,29 +396,13 @@ project("$kafkaSubPath:core") {
   dependencies {
 
     // link to the top level project out of Kafka directory
-    if (project.hasProperty("rootKafkaSubPath") && project.properties.get("rootKafkaSubPath").toString().trim() != "") {  
-	    compile(project(':admin')) {
-          exclude group: "org.apache.logging.log4j", module: 'log4j-slf4j-impl'
-          exclude group: "org.apache.logging.log4j", module: 'log4j-1.2-api'
-	    }
+    if (project.hasProperty("rootKafkaSubPath") && project.properties.get("rootKafkaSubPath").toString().trim() != "") {
         compile(project(':commons')) {
           exclude group: "org.apache.logging.log4j", module: 'log4j-slf4j-impl'
           exclude group: "org.apache.logging.log4j", module: 'log4j-1.2-api'
         }
-        compile(project(':granular')) {
-          exclude group: "org.apache.logging.log4j", module: 'log4j-slf4j-impl'
-          exclude group: "org.apache.logging.log4j", module: 'log4j-1.2-api'
-        }
     } else {
-    	compile 'com.nucypher.kafka:admin:1.0-SNAPSHOT' {
-          exclude group: "org.apache.logging.log4j", module: 'log4j-slf4j-impl'
-          exclude group: "org.apache.logging.log4j", module: 'log4j-1.2-api'
-	    }
         compile 'com.nucypher.kafka:commons:1.0-SNAPSHOT' {
-          exclude group: "org.apache.logging.log4j", module: 'log4j-slf4j-impl'
-          exclude group: "org.apache.logging.log4j", module: 'log4j-1.2-api'
-        }
-        compile 'com.nucypher.kafka:granular:1.0-SNAPSHOT' {
           exclude group: "org.apache.logging.log4j", module: 'log4j-slf4j-impl'
           exclude group: "org.apache.logging.log4j", module: 'log4j-1.2-api'
         }
