@@ -3,11 +3,10 @@ package kafka.nucypher
 import java.nio.ByteBuffer
 import java.util
 
-import com.nucypher.kafka.Constants.{KEY_EDEK, KEY_IS_COMPLEX}
-import com.nucypher.kafka.clients.granular.{StructuredDataAccessor, StructuredMessage}
-import com.nucypher.kafka.clients.{BytesMessage, Header}
+import com.nucypher.kafka.clients.MessageHandler
+import com.nucypher.kafka.clients.granular.{StructuredDataAccessor, StructuredMessageHandler}
 import com.nucypher.kafka.errors.CommonException
-import com.nucypher.kafka.utils.{ByteUtils, KeyUtils, WrapperReEncryptionKey}
+import com.nucypher.kafka.utils.WrapperReEncryptionKey
 import com.nucypher.kafka.zk._
 import kafka.api.FetchResponsePartitionData
 import kafka.common.TopicAndPartition
@@ -209,31 +208,27 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
                               edekCacheCapacity: Int,
                               channelsCacheCapacity: Int,
                               props: java.util.Map[String, _]
-                       ) extends ReEncryptionHandler with Logging {
+                             ) extends ReEncryptionHandler with Logging {
 
-  private val handler = new BaseZooKeeperHandler(zkUtils.zkConnection.getZookeeper, keysRootPath)
+  private val zkHandler = new BaseZooKeeperHandler(zkUtils.zkConnection.getZookeeper, keysRootPath)
+  private val messageHandler = new MessageHandler()
   private val reEncryptionKeysCache =
     ReEncryptionHandler.makeCache[(String, String, ClientType), KeyHolder](
       reEncryptionKeysCacheCapacity,
       (v: KeyHolder) => v.isExpired,
-      (k: (String, String, ClientType)) => handler.getKey(k._1, k._2, k._3)
+      (k: (String, String, ClientType)) => zkHandler.getKey(k._1, k._2, k._3)
     )
   private val granularReEncryptionKeysCache =
     ReEncryptionHandler.makeCache[(String, String, ClientType, String), KeyHolder](
       granularReEncryptionKeysCacheCapacity,
       (v: KeyHolder) => v.isExpired,
-      (k: (String, String, ClientType, String)) => handler.getKey(k._1, k._2, k._3, k._4)
-    )
-  private val edekCache =
-    ReEncryptionHandler.makeCache[(Array[Byte], WrapperReEncryptionKey), Array[Byte]](
-      edekCacheCapacity,
-      (k: (Array[Byte], WrapperReEncryptionKey)) => KeyUtils.reEncryptEDEK(k._1, k._2)
+      (k: (String, String, ClientType, String)) => zkHandler.getKey(k._1, k._2, k._3, k._4)
     )
   private val channelsCache = ReEncryptionHandler.makeCache[String, (Channel, Option[StructuredDataAccessor])](
     channelsCacheCapacity,
     ReEncryptionHandler.DEFAULT_TTL,
     (k: String) => {
-      val channel = handler.getChannel(k)
+      val channel = zkHandler.getChannel(k)
       if (channel == null) null
       else {
         val accessor =
@@ -493,10 +488,7 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
     * @return re-encrypted payload
     */
   def reEncryptPayload(payload: Array[Byte], reKey: WrapperReEncryptionKey): Array[Byte] = {
-    val message = new BytesMessage(payload)
-    val header = reEncryptHeader(message.getHeader, reKey)
-    message.setHeader(header)
-    message.serialize()
+    messageHandler.reEncrypt(payload, reKey)
   }
 
   /**
@@ -513,9 +505,10 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
                        clientType: ClientType): Array[Byte] = {
     import scala.collection.JavaConverters._
 
-    val message = new StructuredMessage(payload, channel.getName, accessor)
-    message.getAllHeaders.asScala.map {
-      case (field, header) =>
+    val structuredMessageHandler = new StructuredMessageHandler(messageHandler)
+    val reKeys = structuredMessageHandler
+      .getAllEncrypted(channel.getName, payload, accessor).asScala.flatMap {
+      case (field) =>
         val reKey = granularReEncryptionKeysCache.get(
           (channel.getName, principalName, clientType, field))
         if (reKey.isEmpty && clientType == ClientType.PRODUCER) {
@@ -523,33 +516,15 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
             s"for ${clientType.toString.toLowerCase} '$principalName', " +
             s"channel '${channel.getName}' and field '$field'")
         }
-        (field, header, reKey)
-    }.foreach {
-      case (field, header, reKey) =>
         if (reKey.isEmpty || reKey.get.getKey.isEmpty) {
           trace(s"Field '$field' in the message in the topic '${channel.getName}' " +
             s"for ${clientType.toString.toLowerCase} '$principalName' is not re-encrypted")
+          None
         } else {
-          message.setHeader(field, reEncryptHeader(header, reKey.get.getKey))
+          Some(field, reKey.get.getKey)
         }
-    }
-    message.reEncrypt()
-  }
-
-  /**
-    * Re-encrypt [[Header]]
-    *
-    * @param header input [[Header]]
-    * @param reKey  re-encryption key
-    * @return re-encrypted header
-    */
-  def reEncryptHeader(header: Header, reKey: WrapperReEncryptionKey): Header = {
-    val edek = header.getMap.get(KEY_EDEK)
-    val reEncrypted = edekCache((edek, reKey))
-    header
-      .add(KEY_EDEK, reEncrypted)
-      .add(KEY_IS_COMPLEX, ByteUtils.serialize(reKey.isComplex))
-    header
+    }.toMap.asJava
+    structuredMessageHandler.reEncrypt(reKeys)
   }
 
 }
