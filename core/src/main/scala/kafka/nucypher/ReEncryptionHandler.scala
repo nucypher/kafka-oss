@@ -5,6 +5,7 @@ import java.util
 
 import com.nucypher.kafka.clients.MessageHandler
 import com.nucypher.kafka.clients.granular.{StructuredDataAccessor, StructuredMessageHandler}
+import com.nucypher.kafka.encrypt.DataEncryptionKeyManager
 import com.nucypher.kafka.errors.CommonException
 import com.nucypher.kafka.utils.WrapperReEncryptionKey
 import com.nucypher.kafka.zk._
@@ -211,7 +212,8 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
                              ) extends ReEncryptionHandler with Logging {
 
   private val zkHandler = new BaseZooKeeperHandler(zkUtils.zkConnection.getZookeeper, keysRootPath)
-  private val messageHandler = new MessageHandler()
+  private val keyManager = new DataEncryptionKeyManager(edekCacheCapacity)
+  private val messageHandler = new MessageHandler(keyManager)
   private val reEncryptionKeysCache =
     ReEncryptionHandler.makeCache[(String, String, ClientType), KeyHolder](
       reEncryptionKeysCacheCapacity,
@@ -517,7 +519,8 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
             s"channel '${channel.getName}' and field '$field'")
         }
         if (reKey.isEmpty || reKey.get.getKey.isEmpty) {
-          trace(s"Field '$field' in the message in the topic '${channel.getName}' " +
+          //TODO change to trace
+          debug(s"Field '$field' in the message in the topic '${channel.getName}' " +
             s"for ${clientType.toString.toLowerCase} '$principalName' is not re-encrypted")
           None
         } else {
