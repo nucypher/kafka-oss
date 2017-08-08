@@ -27,6 +27,10 @@ object NuCypherConfigs {
   val NUCYPHER_CACHE_CHANNELS_CAPACITY_DOC = "Channels cache capacity"
   val NUCYPHER_CACHE_CHANNELS_CAPACITY_DEFAULT = 1000
 
+  val NUCYPHER_CACHE_CHANNELS_TTL_MS = "nucypher.cache.channels.ttl.ms"
+  val NUCYPHER_CACHE_CHANNELS_TTL_MS_DOC = "Channels cache TTL in milliseconds"
+  val NUCYPHER_CACHE_CHANNELS_TTL_MS_DEFAULT = 14400000
+
   def validatePath(keysRootPath: String): Boolean = {
     Try(PathUtils.validatePath(keysRootPath)) match {
       case Success(_) => true
