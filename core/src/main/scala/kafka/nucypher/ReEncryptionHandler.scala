@@ -56,8 +56,6 @@ trait ReEncryptionHandler {
   */
 object ReEncryptionHandler {
 
-  val DEFAULT_TTL: Long = 4 * 60 * 60 * 1000 //TODO move to configuration
-
   /**
     * Creates new instance of ReEncryptionHandler. If 'nucypher.reencryption.keys.path' is empty then returns stub
     *
@@ -76,6 +74,7 @@ object ReEncryptionHandler {
         config.nuCypherCacheGranularReEncryptionKeysCapacity,
         config.nuCypherCacheEDEKCapacity,
         config.nuCypherCacheChannelsCapacity,
+        config.nuCypherCacheChannelsTTLms,
         config.originals()
       )
 
@@ -208,6 +207,7 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
                               granularReEncryptionKeysCacheCapacity: Int,
                               edekCacheCapacity: Int,
                               channelsCacheCapacity: Int,
+                              channelsCacheTTLms: Long,
                               props: java.util.Map[String, _]
                              ) extends ReEncryptionHandler with Logging {
 
@@ -226,12 +226,13 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
       (v: KeyHolder) => v.isExpired,
       (k: (String, String, ClientType, String)) => zkHandler.getKey(k._1, k._2, k._3, k._4)
     )
-  private val channelsCache = ReEncryptionHandler.makeCache[String, (Channel, Option[StructuredDataAccessor])](
+  private val channelsCache = ReEncryptionHandler
+    .makeCache[String, (Option[Channel], Option[StructuredDataAccessor])](
     channelsCacheCapacity,
-    ReEncryptionHandler.DEFAULT_TTL,
+    channelsCacheTTLms,
     (k: String) => {
       val channel = zkHandler.getChannel(k)
-      if (channel == null) null
+      if (channel == null) (None, None)
       else {
         val accessor =
           if (channel.getType == EncryptionType.GRANULAR) {
@@ -241,7 +242,7 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
           } else {
             None
           }
-        (channel, accessor)
+        (Some(channel), accessor)
       }
     }
   )
@@ -254,7 +255,8 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
     * @param topic topic to check
     * @return result of checking
     */
-  def isTopicEncrypted(topic: String): Boolean = channelsCache.get(topic).isDefined
+  def isTopicEncrypted(topic: String): Boolean = channelsCache.get(topic).isDefined &&
+    channelsCache(topic)._1._1.isDefined
 
   /**
     * Checks rights for re-encryption messages
@@ -265,11 +267,12 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
     * @return result of checking
     */
   def isAllowReEncryption(topic: String, principal: KafkaPrincipal, clientType: ClientType): Boolean = {
-    channelsCache(topic)._1._1.getType == EncryptionType.GRANULAR ||
-      (reEncryptionKeysCache.get((topic, principal.getName, clientType)) match {
-        case Some(key) => !key.isExpired
-        case None => false
-      })
+    channelsCache(topic)._1._1.isDefined &&
+      (channelsCache(topic)._1._1.get.getType == EncryptionType.GRANULAR ||
+        (reEncryptionKeysCache.get((topic, principal.getName, clientType)) match {
+          case Some(key) => !key.isExpired
+          case None => false
+        }))
   }
 
   /**
@@ -347,12 +350,12 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
                      clientType: ClientType,
                      messageSet: MessageSet): MessageSet = {
     val channel = channelsCache(topic)._1
-    channel._1.getType match {
+    channel._1.get.getType match {
       case EncryptionType.GRANULAR =>
         granularReEncryptTopic(
-          channel._1, channel._2.get, principalName, clientType, messageSet)
+          channel._1.get, channel._2.get, principalName, clientType, messageSet)
       case EncryptionType.FULL =>
-        fullReEncryptTopic(channel._1, principalName, clientType, messageSet)
+        fullReEncryptTopic(channel._1.get, principalName, clientType, messageSet)
     }
   }
 

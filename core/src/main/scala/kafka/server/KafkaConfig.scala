@@ -219,6 +219,7 @@ object Defaults {
     NuCypherConfigs.NUCYPHER_CACHE_GRANULAR_RE_ENCRYPTION_KEYS_CAPACITY_DEFAULT
   val NuCypherCacheEDEKCapacity = NuCypherConfigs.NUCYPHER_CACHE_EDEK_CAPACITY_DEFAULT
   val NuCypherCacheChannelsCapacity = NuCypherConfigs.NUCYPHER_CACHE_CHANNELS_CAPACITY_DEFAULT
+  val NuCypherCacheChannelsTTLms = NuCypherConfigs.NUCYPHER_CACHE_CHANNELS_TTL_MS_DEFAULT
 
 }
 
@@ -418,6 +419,7 @@ object KafkaConfig {
     NuCypherConfigs.NUCYPHER_CACHE_GRANULAR_RE_ENCRYPTION_KEYS_CAPACITY
   val NuCypherCacheEDEKCapacityProp = NuCypherConfigs.NUCYPHER_CACHE_EDEK_CAPACITY
   val NuCypherCacheChannelsCapacityProp = NuCypherConfigs.NUCYPHER_CACHE_CHANNELS_CAPACITY
+  val NuCypherCacheChannelsTTLmsProp = NuCypherConfigs.NUCYPHER_CACHE_CHANNELS_TTL_MS
 
   /* Documentation */
   /** ********* Zookeeper Configuration ***********/
@@ -686,6 +688,7 @@ object KafkaConfig {
   NuCypherConfigs.NUCYPHER_CACHE_GRANULAR_RE_ENCRYPTION_KEYS_CAPACITY_DOC
   val NuCypherCacheEDEKCapacityDoc = NuCypherConfigs.NUCYPHER_CACHE_EDEK_CAPACITY_DOC
   val NuCypherCacheChannelsCapacityDoc = NuCypherConfigs.NUCYPHER_CACHE_CHANNELS_CAPACITY_DOC
+  val NuCypherCacheChannelsTTLmsDoc = NuCypherConfigs.NUCYPHER_CACHE_CHANNELS_TTL_MS_DOC
 
 
   private val configDef = {
@@ -891,9 +894,12 @@ object KafkaConfig {
       .define(NuCypherCacheGranularReEncryptionKeysCapacityProp,
         INT, Defaults.NuCypherCacheGranularReEncryptionKeysCapacity,
         LOW, NuCypherCacheReEncryptionKeysCapacityDoc)
-      .define(NuCypherCacheEDEKCapacityProp, INT, Defaults.NuCypherCacheEDEKCapacity, LOW, NuCypherCacheEDEKCapacityDoc)
+      .define(NuCypherCacheEDEKCapacityProp, INT, Defaults.NuCypherCacheEDEKCapacity,
+        LOW, NuCypherCacheEDEKCapacityDoc)
       .define(NuCypherCacheChannelsCapacityProp, INT, Defaults.NuCypherCacheChannelsCapacity,
         LOW, NuCypherCacheChannelsCapacityDoc)
+      .define(NuCypherCacheChannelsTTLmsProp, LONG, Defaults.NuCypherCacheChannelsTTLms,
+        LOW, NuCypherCacheChannelsTTLmsDoc)
   }
 
   def configNames() = configDef.names().asScala.toList.sorted
@@ -1120,6 +1126,7 @@ class KafkaConfig(val props: java.util.Map[_, _], doLog: Boolean) extends Abstra
     getInt(KafkaConfig.NuCypherCacheGranularReEncryptionKeysCapacityProp)
   val nuCypherCacheEDEKCapacity = getInt(KafkaConfig.NuCypherCacheEDEKCapacityProp)
   val nuCypherCacheChannelsCapacity = getInt(KafkaConfig.NuCypherCacheChannelsCapacityProp)
+  val nuCypherCacheChannelsTTLms = getLong(KafkaConfig.NuCypherCacheChannelsTTLmsProp)
 
   private def getLogRetentionTimeMillis: Long = {
     val millisInMinute = 60L * 1000L
@@ -1249,5 +1256,7 @@ class KafkaConfig(val props: java.util.Map[_, _], doLog: Boolean) extends Abstra
       s"${KafkaConfig.NuCypherCacheEDEKCapacityProp} must be greater than 0")
     require(nuCypherCacheChannelsCapacity > 0,
       s"${KafkaConfig.NuCypherCacheChannelsCapacityProp} must be greater than 0")
+    require(nuCypherCacheChannelsTTLms > 0,
+      s"${KafkaConfig.NuCypherCacheChannelsTTLmsProp} must be greater than 0")
   }
 }
