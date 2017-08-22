@@ -404,7 +404,7 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
       debug(s"Re-encrypt ${messageSet.size} messages in the topic '$topic' " +
         s"for ${clientType.toString.toLowerCase} '$principalName'")
       reEncryptTopic(
-        bytes => reEncryptPayload(bytes, keyHolder.getKey),
+        bytes => reEncryptPayload(topic, bytes, keyHolder.getKey),
         messageSet)
     }
   }
@@ -488,12 +488,13 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
   /**
     * Full re-encrypt payload from message
     *
+    * @param topic   topic
     * @param payload message payload
     * @param reKey   re-encryption key
     * @return re-encrypted payload
     */
-  def reEncryptPayload(payload: Array[Byte], reKey: WrapperReEncryptionKey): Array[Byte] = {
-    messageHandler.reEncrypt(payload, reKey)
+  def reEncryptPayload(topic: String, payload: Array[Byte], reKey: WrapperReEncryptionKey): Array[Byte] = {
+    messageHandler.reEncrypt(topic, payload, reKey)
   }
 
   /**
@@ -510,27 +511,28 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
                        clientType: ClientType): Array[Byte] = {
     import scala.collection.JavaConverters._
 
+    val topic = channel.getName
     val structuredMessageHandler = new StructuredMessageHandler(messageHandler)
     val reKeys = structuredMessageHandler
-      .getAllEncrypted(channel.getName, payload, accessor).asScala.flatMap {
+      .getAllEncrypted(topic, payload, accessor).asScala.flatMap {
       case (field) =>
         val reKey = granularReEncryptionKeysCache.get(
-          (channel.getName, principalName, clientType, field))
+          (topic, principalName, clientType, field))
         if (reKey.isEmpty && clientType == ClientType.PRODUCER) {
           throw new CommonException(s"There are no re-encryption key " +
             s"for ${clientType.toString.toLowerCase} '$principalName', " +
-            s"channel '${channel.getName}' and field '$field'")
+            s"channel '$topic' and field '$field'")
         }
         if (reKey.isEmpty || reKey.get.getKey.isEmpty) {
           //TODO change to trace
-          debug(s"Field '$field' in the message in the topic '${channel.getName}' " +
+          debug(s"Field '$field' in the message in the topic '$topic' " +
             s"for ${clientType.toString.toLowerCase} '$principalName' is not re-encrypted")
           None
         } else {
           Some(field, reKey.get.getKey)
         }
     }.toMap.asJava
-    structuredMessageHandler.reEncrypt(reKeys)
+    structuredMessageHandler.reEncrypt(topic, reKeys)
   }
 
 }
