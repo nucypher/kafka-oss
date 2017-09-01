@@ -513,8 +513,7 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
 
     val topic = channel.getName
     val structuredMessageHandler = new StructuredMessageHandler(messageHandler)
-    val reKeys = structuredMessageHandler
-      .getAllEncrypted(topic, payload, accessor).asScala.flatMap {
+    val reKeys = structuredMessageHandler.getAllEncryptedFields(payload).asScala.flatMap {
       case (field) =>
         val reKey = granularReEncryptionKeysCache.get(
           (topic, principalName, clientType, field))
