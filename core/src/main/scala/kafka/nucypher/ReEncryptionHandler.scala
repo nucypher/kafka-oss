@@ -9,18 +9,16 @@ import com.nucypher.kafka.encrypt.DataEncryptionKeyManager
 import com.nucypher.kafka.errors.CommonException
 import com.nucypher.kafka.utils.WrapperReEncryptionKey
 import com.nucypher.kafka.zk._
-import kafka.api.FetchResponsePartitionData
-import kafka.common.TopicAndPartition
-import kafka.log.FileMessageSet
 import kafka.message._
 import kafka.server.KafkaConfig
 import kafka.utils.{Logging, ZkUtils}
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.protocol.Errors
+import org.apache.kafka.common.record._
+import org.apache.kafka.common.requests.FetchResponse
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.security.auth.KafkaPrincipal
 
-import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Seq, mutable}
 import scala.util.{Failure, Success, Try}
 
@@ -30,25 +28,25 @@ import scala.util.{Failure, Success, Try}
 trait ReEncryptionHandler {
 
   /**
-    * Re-encrypt all messages from producer
+    * Re-encrypt all records from producer
     *
     * @param requestInfo request info
     * @param principal   principal
     * @return re-encrypted data and errors
     */
-  def reEncryptProducer(requestInfo: mutable.Map[TopicPartition, ByteBuffer],
+  def reEncryptProducer(requestInfo: mutable.Map[TopicPartition, MemoryRecords],
                         principal: KafkaPrincipal):
-  (mutable.Map[TopicPartition, MessageSet], mutable.Map[TopicPartition, PartitionResponse])
+  (mutable.Map[TopicPartition, MemoryRecords], mutable.Map[TopicPartition, PartitionResponse])
 
   /**
-    * Re-encrypt all messages for consumer
+    * Re-encrypt all records for consumer
     *
-    * @param responsePartitionData fetched data
-    * @param principal             principal
+    * @param partitionData fetched data
+    * @param principal     principal
     * @return re-encrypted data
     */
-  def reEncryptConsumer(responsePartitionData: Seq[(TopicAndPartition, FetchResponsePartitionData)],
-                        principal: KafkaPrincipal): Seq[(TopicAndPartition, FetchResponsePartitionData)]
+  def reEncryptConsumer(partitionData: Seq[(TopicPartition, FetchResponse.PartitionData)],
+                        principal: KafkaPrincipal): Seq[(TopicPartition, FetchResponse.PartitionData)]
 }
 
 /**
@@ -166,28 +164,24 @@ class ReEncryptionHandlerStub() extends ReEncryptionHandler {
     *
     * @param requestInfo request info
     * @param principal   principal (not used)
-    * @return messages per partition
+    * @return records per partition
     */
-  override def reEncryptProducer(requestInfo: mutable.Map[TopicPartition, ByteBuffer],
+  override def reEncryptProducer(requestInfo: mutable.Map[TopicPartition, MemoryRecords],
                                  principal: KafkaPrincipal):
-  (mutable.Map[TopicPartition, MessageSet], mutable.Map[TopicPartition, PartitionResponse]) = {
-    val messagesPerPartition: mutable.Map[TopicPartition, MessageSet] =
-      requestInfo.map {
-        case (topicPartition, buffer) => (topicPartition, new ByteBufferMessageSet(buffer))
-      }
-    (messagesPerPartition, mutable.Map())
+  (mutable.Map[TopicPartition, MemoryRecords], mutable.Map[TopicPartition, PartitionResponse]) = {
+    (requestInfo, mutable.Map[TopicPartition, PartitionResponse]())
   }
 
   /**
     * Return input data
     *
-    * @param responsePartitionData fetched data
-    * @param principal             principal (not used)
+    * @param partitionData fetched data
+    * @param principal     principal (not used)
     * @return fetched data
     */
-  override def reEncryptConsumer(responsePartitionData: Seq[(TopicAndPartition, FetchResponsePartitionData)],
+  override def reEncryptConsumer(partitionData: Seq[(TopicPartition, FetchResponse.PartitionData)],
                                  principal: KafkaPrincipal):
-  Seq[(TopicAndPartition, FetchResponsePartitionData)] = responsePartitionData
+  Seq[(TopicPartition, FetchResponse.PartitionData)] = partitionData
 
 }
 
@@ -200,6 +194,7 @@ class ReEncryptionHandlerStub() extends ReEncryptionHandler {
   * @param granularReEncryptionKeysCacheCapacity granular re-encryption keys cache capacity
   * @param edekCacheCapacity                     EDEK cache capacity
   * @param channelsCacheCapacity                 channels cache capacity
+  * @param channelsCacheTTLms                    channels cache TTL
   */
 class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
                               keysRootPath: String,
@@ -259,7 +254,7 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
     channelsCache(topic)._1._1.isDefined
 
   /**
-    * Checks rights for re-encryption messages
+    * Checks rights for re-encryption records
     *
     * @param topic      topic name to check
     * @param principal  user to check
@@ -276,33 +271,32 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
   }
 
   /**
-    * Re-encrypt all messages from producer
+    * Re-encrypt all records from producer
     *
     * @param requestInfo request info
     * @param principal   principal
     * @return re-encrypted data and errors
     */
-  def reEncryptProducer(requestInfo: mutable.Map[TopicPartition, ByteBuffer],
+  def reEncryptProducer(requestInfo: mutable.Map[TopicPartition, MemoryRecords],
                         principal: KafkaPrincipal):
-  (mutable.Map[TopicPartition, MessageSet], mutable.Map[TopicPartition, PartitionResponse]) = {
-    debug(s"Re-encrypt all messages for producer '${principal.getName}'")
-    val reEncrypted = new mutable.HashMap[TopicPartition, MessageSet]
+  (mutable.Map[TopicPartition, MemoryRecords], mutable.Map[TopicPartition, PartitionResponse]) = {
+    debug(s"Re-encrypt all records for producer '${principal.getName}'")
+    val reEncrypted = new mutable.HashMap[TopicPartition, MemoryRecords]
     val errors = new mutable.HashMap[TopicPartition, PartitionResponse]
 
-    for {(topicPartition, bytes) <- requestInfo} {
-      val messageSet = new ByteBufferMessageSet(bytes)
-      if (messageSet.isEmpty || !isTopicEncrypted(topicPartition.topic())) {
-        debug(s"${messageSet.size} messages to the topic '${topicPartition.topic()}' without encryption")
-        reEncrypted += topicPartition -> messageSet
+    for {(topicPartition, records) <- requestInfo} {
+      if (!records.records().iterator().hasNext || !isTopicEncrypted(topicPartition.topic())) {
+        debug(s"Records to the topic '${topicPartition.topic()}' without encryption")
+        reEncrypted += topicPartition -> records
       } else if (!isAllowReEncryption(topicPartition.topic(), principal, ClientType.PRODUCER)) {
         error(s"Producer '${principal.getName}' not authorized for writing " +
-          s"messages to the topic '${topicPartition.topic()}'")
-        errors += topicPartition -> new PartitionResponse(Errors.UNKNOWN.code, -1, Message.NoTimestamp)
-      } else Try(reEncryptTopic(topicPartition.topic, principal.getName, ClientType.PRODUCER, messageSet)) match {
-        case Success(x) => reEncrypted += topicPartition -> x
+          s"records to the topic '${topicPartition.topic()}'")
+        errors += topicPartition -> new PartitionResponse(Errors.UNKNOWN)
+      } else Try(reEncryptTopic(topicPartition.topic, principal.getName, ClientType.PRODUCER, records)) match {
+        case Success(x) => reEncrypted += topicPartition -> x.asInstanceOf[MemoryRecords] //TODO fix asInstanceOf
         case Failure(e) => error(s"Error while re-encryption topic-partition " +
           s"${topicPartition.topic()}-${topicPartition.partition()}", e)
-          errors += topicPartition -> new PartitionResponse(Errors.UNKNOWN.code, -1, Message.NoTimestamp)
+          errors += topicPartition -> new PartitionResponse(Errors.UNKNOWN)
       }
     }
 
@@ -310,52 +304,70 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
   }
 
   /**
-    * Re-encrypt all messages for consumer
+    * Re-encrypt all records for consumer
     *
-    * @param responsePartitionData fetched data
-    * @param principal             principal
+    * @param partitionData fetched data
+    * @param principal     principal
     * @return re-encrypted data
     */
-  def reEncryptConsumer(responsePartitionData: Seq[(TopicAndPartition, FetchResponsePartitionData)],
-                        principal: KafkaPrincipal): Seq[(TopicAndPartition, FetchResponsePartitionData)] = {
-    debug(s"Re-encrypt all messages for consumer '${principal.getName}'")
-    responsePartitionData.map { case (topicPartition, data) =>
-      if (data.messages.isEmpty || !isTopicEncrypted(topicPartition.topic)) {
-        debug(s"${data.messages.size} messages from the topic '${topicPartition.topic}' without encryption")
+  def reEncryptConsumer(partitionData: Seq[(TopicPartition, FetchResponse.PartitionData)],
+                        principal: KafkaPrincipal): Seq[(TopicPartition, FetchResponse.PartitionData)] = {
+    debug(s"Re-encrypt all records for consumer '${principal.getName}'")
+    partitionData.map { case (topicPartition, data) =>
+      if (!data.records.records().iterator().hasNext || !isTopicEncrypted(topicPartition.topic)) {
+        debug(s"Records from the topic '${topicPartition.topic}' without encryption")
         topicPartition -> data
       } else if (!isAllowReEncryption(topicPartition.topic, principal, ClientType.CONSUMER)) {
         error(s"Consumer '${principal.getName}' not authorized for fetching " +
-          s"messages from the topic '${topicPartition.topic}'")
-        topicPartition -> FetchResponsePartitionData(Errors.UNKNOWN.code, -1, MessageSet.Empty)
-      } else Try(reEncryptTopic(topicPartition.topic, principal.getName, ClientType.CONSUMER, data.messages)) match {
-        case Success(x) => topicPartition -> new FetchResponsePartitionData(data.error, data.hw, x)
+          s"records from the topic '${topicPartition.topic}'")
+        topicPartition -> new FetchResponse.PartitionData(
+          Errors.UNKNOWN,
+          FetchResponse.INVALID_HIGHWATERMARK,
+          FetchResponse.INVALID_LAST_STABLE_OFFSET,
+          FetchResponse.INVALID_LOG_START_OFFSET,
+          null,
+          MemoryRecords.EMPTY)
+      } else Try(reEncryptTopic(topicPartition.topic, principal.getName, ClientType.CONSUMER, data.records)) match {
+        case Success(x) => topicPartition -> new FetchResponse.PartitionData(
+          data.error,
+          data.highWatermark,
+          data.lastStableOffset,
+          data.logStartOffset,
+          data.abortedTransactions,
+          x)
         case Failure(e) => error(s"Error while re-encryption topic-partition " +
           s"${topicPartition.topic}-${topicPartition.partition}", e)
-          topicPartition -> FetchResponsePartitionData(Errors.UNKNOWN.code, -1, MessageSet.Empty)
+          topicPartition -> new FetchResponse.PartitionData(
+            Errors.UNKNOWN,
+            FetchResponse.INVALID_HIGHWATERMARK,
+            FetchResponse.INVALID_LAST_STABLE_OFFSET,
+            FetchResponse.INVALID_LOG_START_OFFSET,
+            null,
+            MemoryRecords.EMPTY)
       }
     }
   }
 
   /**
-    * Re-encrypt all messages in one topic
+    * Re-encrypt all records in one topic
     *
     * @param topic         topic name
     * @param principalName user principal name
     * @param clientType    client type
-    * @param messageSet    messages
-    * @return re-encrypted messages
+    * @param records       records
+    * @return re-encrypted records
     */
   def reEncryptTopic(topic: String,
                      principalName: String,
                      clientType: ClientType,
-                     messageSet: MessageSet): MessageSet = {
+                     records: Records): Records = {
     val channel = channelsCache(topic)._1
     channel._1.get.getType match {
       case EncryptionType.GRANULAR =>
         granularReEncryptTopic(
-          channel._1.get, channel._2.get, principalName, clientType, messageSet)
+          channel._1.get, channel._2.get, principalName, clientType, records)
       case EncryptionType.FULL =>
-        fullReEncryptTopic(channel._1.get, principalName, clientType, messageSet)
+        fullReEncryptTopic(channel._1.get, principalName, clientType, records)
     }
   }
 
@@ -366,99 +378,88 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
     * @param accessor      data accessor
     * @param principalName user principal name
     * @param clientType    client type
-    * @param messageSet    messages
-    * @return re-encrypted messages
+    * @param records       records
+    * @return re-encrypted records
     */
   def granularReEncryptTopic(channel: Channel,
                              accessor: StructuredDataAccessor,
                              principalName: String,
                              clientType: ClientType,
-                             messageSet: MessageSet): MessageSet = {
+                             records: Records): MemoryRecords = {
     reEncryptTopic(
       bytes => reEncryptPayload(bytes, channel, accessor, principalName, clientType),
-      messageSet
+      records
     )
   }
 
   /**
-    * Full re-encrypt all messages in one topic
+    * Full re-encrypt all records in one topic
     *
     * @param channel       channel object
     * @param principalName user principal name
     * @param clientType    client type
-    * @param messageSet    messages
-    * @return re-encrypted messages
+    * @param records       records
+    * @return re-encrypted records
     */
   def fullReEncryptTopic(channel: Channel,
                          principalName: String,
                          clientType: ClientType,
-                         messageSet: MessageSet): MessageSet = {
+                         records: Records): Records = {
     val topic = channel.getName
     val keyHolder = reEncryptionKeysCache((topic, principalName, clientType))
     if (keyHolder.getKey.isEmpty) {
-      debug(s"${messageSet.size} messages in the topic '$topic' " +
-        s"for ${clientType.toString.toLowerCase} " +
+      debug(s"Records in the topic '$topic' for ${clientType.toString.toLowerCase} " +
         s"'$principalName' are not re-encrypted")
-      messageSet
+      records
     } else {
-      debug(s"Re-encrypt ${messageSet.size} messages in the topic '$topic' " +
+      debug(s"Re-encrypt records in the topic '$topic' " +
         s"for ${clientType.toString.toLowerCase} '$principalName'")
       reEncryptTopic(
         bytes => reEncryptPayload(topic, bytes, keyHolder.getKey),
-        messageSet)
+        records)
     }
   }
 
   /**
-    * Re-encrypt all messages in one topic
+    * Re-encrypt all records in one topic
     *
     * @param reEncryptFunction re-encryption function
-    * @param messageSet        messages
-    * @return re-encrypted messages
+    * @param records           records
+    * @return re-encrypted records
     */
   def reEncryptTopic(reEncryptFunction: Array[Byte] => Array[Byte],
-                     messageSet: MessageSet): MessageSet = {
-    val offsets = new ArrayBuffer[Long]
-    val newMessages = new ArrayBuffer[Message]
+                     records: Records): MemoryRecords = {
+    import scala.collection.JavaConverters._
 
-    if (messageSet.isInstanceOf[FileMessageSet]) messageSet.foreach {
-      messageAndOffset =>
-        val message = messageAndOffset.message
-        if (message.compressionCodec == NoCompressionCodec) {
-          newMessages += reEncryptMessage(reEncryptFunction, message)
-          offsets += messageAndOffset.offset
-        } else {
-          // File message set only has shallow iterator. We need to do deep iteration here if needed.
-          val deepIter = ByteBufferMessageSet.deepIterator(messageAndOffset)
-          for (innerMessageAndOffset <- deepIter) {
-            newMessages += reEncryptMessage(reEncryptFunction, innerMessageAndOffset.message)
-            offsets += innerMessageAndOffset.offset
-          }
-        }
-    }
-    else messageSet.foreach {
-      messageAndOffset => {
-        newMessages += reEncryptMessage(reEncryptFunction, messageAndOffset.message)
-        offsets += messageAndOffset.offset
+    var builder: MemoryRecordsBuilder = null
+    for (recordBatch: RecordBatch <- records.batches().asScala) {
+      if (builder == null) {
+        //assume that all batches has the same compression and others parameters
+        builder = MemoryRecords.builder(
+          ByteBuffer.allocate(records.sizeInBytes()),
+          recordBatch.compressionType(),
+          recordBatch.timestampType(),
+          recordBatch.baseOffset())
+      }
+      for (record: Record <- recordBatch.asScala) {
+        builder.append(reEncryptRecord(reEncryptFunction, record))
       }
     }
 
-    new ByteBufferMessageSet(
-      compressionCodec = messageSet.headOption.map(_.message.compressionCodec).getOrElse(NoCompressionCodec),
-      offsetSeq = offsets,
-      newMessages: _*)
+    builder.closeForRecordAppends()
+    builder.build()
   }
 
   /**
-    * Re-encrypt one message
+    * Re-encrypt one record
     *
     * @param reEncryptFunction re-encryption function
-    * @param message           message
+    * @param record            record
     * @return re-encrypted payload
     */
-  def reEncryptMessage(reEncryptFunction: Array[Byte] => Array[Byte],
-                       message: Message): Message = {
-    val payload = message.payload
+  def reEncryptRecord(reEncryptFunction: Array[Byte] => Array[Byte],
+                      record: Record): SimpleRecord = {
+    val payload = record.value
     var valueBytes: Array[Byte] = null
     if (payload != null) {
       valueBytes = new Array[Byte](payload.remaining)
@@ -466,30 +467,26 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
       valueBytes = reEncryptFunction(valueBytes)
     }
 
-    val key = message.key
+    val key = record.key
     var keyBytes: Array[Byte] = null
     if (key != null) {
       keyBytes = new Array[Byte](key.remaining)
       key.get(keyBytes)
     }
 
-    new Message(
-      valueBytes,
+    new SimpleRecord(
+      record.timestamp(),
       keyBytes,
-      message.timestamp,
-      message.timestampType,
-      message.compressionCodec,
-      0,
-      -1,
-      message.magic
+      valueBytes,
+      record.headers()
     )
   }
 
   /**
-    * Full re-encrypt payload from message
+    * Full re-encrypt payload from record
     *
     * @param topic   topic
-    * @param payload message payload
+    * @param payload record payload
     * @param reKey   re-encryption key
     * @return re-encrypted payload
     */
@@ -498,7 +495,7 @@ class ReEncryptionHandlerImpl(zkUtils: ZkUtils,
   }
 
   /**
-    * Granular re-encrypt payload from message
+    * Granular re-encrypt payload from record
     *
     * @param payload structured payload
     * @param channel channel object

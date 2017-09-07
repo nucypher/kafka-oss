@@ -32,6 +32,41 @@ buildscript {
 }
 
 //apply from: "$rootDir/gradle/dependencies.gradle"
+
+ext {
+  gradleVersion = "3.5"
+  buildVersionFileName = "kafka-version.properties"
+
+  kafkaSubPath = ""
+  gradleDependenciesPath = "$rootDir"
+
+  if (project.hasProperty("rootKafkaSubPath") && project.properties.get("rootKafkaSubPath").toString().trim() != "") {
+    kafkaSubPath = project.properties.get("rootKafkaSubPath")
+    gradleDependenciesPath = "$rootDir/kafka"
+  }
+
+  maxPermSizeArgs = []
+  if (!JavaVersion.current().isJava8Compatible())
+    maxPermSizeArgs = ['-XX:MaxPermSize=512m']
+
+  userMaxForks = project.hasProperty('maxParallelForks') ? maxParallelForks.toInteger() : null
+
+  skipSigning = project.hasProperty('skipSigning') && skipSigning.toBoolean()
+  shouldSign = !skipSigning && !version.endsWith("SNAPSHOT") && project.gradle.startParameter.taskNames.any { it.contains("upload") }
+
+  mavenUrl = project.hasProperty('mavenUrl') ? project.mavenUrl : ''
+  mavenUsername = project.hasProperty('mavenUsername') ? project.mavenUsername : ''
+  mavenPassword = project.hasProperty('mavenPassword') ? project.mavenPassword : ''
+
+  userShowStandardStreams = project.hasProperty("showStandardStreams") ? showStandardStreams : null
+
+  userTestLoggingEvents = project.hasProperty("testLoggingEvents") ? Arrays.asList(testLoggingEvents.split(",")) : null
+
+  generatedDocsDir = new File("$gradleDependenciesPath/docs/generated")
+
+  commitId = project.hasProperty('commitId') ? commitId : null
+}
+
 apply from: "$ext.gradleDependenciesPath/gradle/dependencies.gradle"
 
 allprojects {
@@ -75,40 +110,6 @@ allprojects {
     }
   }
 
-}
-
-ext {
-  gradleVersion = "3.5"
-  buildVersionFileName = "kafka-version.properties"
-
-  kafkaSubPath = ""
-  gradleDependenciesPath = "$rootDir"
-
-  if (project.hasProperty("rootKafkaSubPath") && project.properties.get("rootKafkaSubPath").toString().trim() != "") {
-    kafkaSubPath = project.properties.get("rootKafkaSubPath")
-    gradleDependenciesPath = "$rootDir/kafka"
-  }
-
-  maxPermSizeArgs = []
-  if (!JavaVersion.current().isJava8Compatible())
-    maxPermSizeArgs = ['-XX:MaxPermSize=512m']
-
-  userMaxForks = project.hasProperty('maxParallelForks') ? maxParallelForks.toInteger() : null
-
-  skipSigning = project.hasProperty('skipSigning') && skipSigning.toBoolean()
-  shouldSign = !skipSigning && !version.endsWith("SNAPSHOT") && project.gradle.startParameter.taskNames.any { it.contains("upload") }
-
-  mavenUrl = project.hasProperty('mavenUrl') ? project.mavenUrl : ''
-  mavenUsername = project.hasProperty('mavenUsername') ? project.mavenUsername : ''
-  mavenPassword = project.hasProperty('mavenPassword') ? project.mavenPassword : ''
-
-  userShowStandardStreams = project.hasProperty("showStandardStreams") ? showStandardStreams : null
-
-  userTestLoggingEvents = project.hasProperty("testLoggingEvents") ? Arrays.asList(testLoggingEvents.split(",")) : null
-
-  generatedDocsDir = new File("${project.rootDir}/docs/generated")
-
-  commitId = project.hasProperty('commitId') ? commitId : null
 }
 
 apply from: file('wrapper.gradle')
@@ -242,21 +243,21 @@ subprojects {
   }
 
   jar {
-    from "$rootDir/LICENSE"
-    from "$rootDir/NOTICE"
+    from "$gradleDependenciesPath/LICENSE"
+    from "$gradleDependenciesPath/NOTICE"
   }
 
   task srcJar(type: Jar) {
     classifier = 'sources'
-    from "$rootDir/LICENSE"
-    from "$rootDir/NOTICE"
+    from "$gradleDependenciesPath/LICENSE"
+    from "$gradleDependenciesPath/NOTICE"
     from sourceSets.main.allSource
   }
 
   task javadocJar(type: Jar, dependsOn: javadoc) {
     classifier 'javadoc'
-    from "$rootDir/LICENSE"
-    from "$rootDir/NOTICE"
+    from "$gradleDependenciesPath/LICENSE"
+    from "$gradleDependenciesPath/NOTICE"
     from javadoc.destinationDir
   }
 
@@ -278,15 +279,15 @@ subprojects {
   if(!sourceSets.test.allSource.isEmpty()) {
     task testJar(type: Jar) {
       classifier = 'test'
-      from "$rootDir/LICENSE"
-      from "$rootDir/NOTICE"
+      from "$gradleDependenciesPath/LICENSE"
+      from "$gradleDependenciesPath/NOTICE"
       from sourceSets.test.output
     }
 
     task testSrcJar(type: Jar, dependsOn: testJar) {
       classifier = 'test-sources'
-      from "$rootDir/LICENSE"
-      from "$rootDir/NOTICE"
+      from "$gradleDependenciesPath/LICENSE"
+      from "$gradleDependenciesPath/NOTICE"
       from sourceSets.test.allSource
     }
 
@@ -299,8 +300,8 @@ subprojects {
   plugins.withType(ScalaPlugin) {
     task scaladocJar(type:Jar) {
       classifier = 'scaladoc'
-      from "$rootDir/LICENSE"
-      from "$rootDir/NOTICE"
+      from "$gradleDependenciesPath/LICENSE"
+      from "$gradleDependenciesPath/NOTICE"
       from scaladoc.destinationDir
     }
 
@@ -331,8 +332,8 @@ subprojects {
   }
 
   checkstyle {
-    configFile = new File(rootDir, "checkstyle/checkstyle.xml")
-    configProperties = [importControlFile: "$rootDir/checkstyle/import-control.xml"]
+    configFile = new File(gradleDependenciesPath, "checkstyle/checkstyle.xml")
+    configProperties = [importControlFile: "$gradleDependenciesPath/checkstyle/import-control.xml"]
     // version 7.x requires Java 8
     toolVersion = '6.19'
   }
@@ -340,7 +341,7 @@ subprojects {
 
   findbugs {
     toolVersion = "3.0.1"
-    excludeFilter = file("$rootDir/gradle/findbugs-exclude.xml")
+    excludeFilter = file("$gradleDependenciesPath/gradle/findbugs-exclude.xml")
     ignoreFailures = false
   }
   test.dependsOn('findbugsMain')
@@ -664,7 +665,7 @@ project("$kafkaSubPath:core") {
                                kafkaSubPath + ':streams:genStreamsConfigDocs', 'genConsumerMetricsDocs'], type: Tar) {
     classifier = 'site-docs'
     compression = Compression.GZIP
-    from project.file("$rootDir/docs")
+    from project.file("$gradleDependenciesPath/docs")
     into 'site-docs'
     duplicatesStrategy 'exclude'
   }
@@ -672,10 +673,10 @@ project("$kafkaSubPath:core") {
   tasks.create(name: "releaseTarGz", dependsOn: configurations.archives.artifacts, type: Tar) {
     into "kafka_${versions.baseScala}-${version}"
     compression = Compression.GZIP
-    from(project.file("$rootDir/bin")) { into "bin/" }
-    from(project.file("$rootDir/config")) { into "config/" }
-    from "$rootDir/LICENSE"
-    from "$rootDir/NOTICE"
+    from(project.file("$gradleDependenciesPath/bin")) { into "bin/" }
+    from(project.file("$gradleDependenciesPath/config")) { into "config/" }
+    from "$gradleDependenciesPath/LICENSE"
+    from "$gradleDependenciesPath/NOTICE"
     from(configurations.runtime) { into("libs/") }
     from(configurations.archives.artifacts.files) { into("libs/") }
     from(project.siteDocsTar) { into("site-docs/") }
@@ -719,7 +720,7 @@ project("$kafkaSubPath:core") {
   systemTestLibs.dependsOn('jar', 'testJar', 'copyDependantTestLibs')
 
   checkstyle {
-    configProperties = [importControlFile: "$rootDir/checkstyle/import-control-core.xml"]
+    configProperties = [importControlFile: "$gradleDependenciesPath/checkstyle/import-control-core.xml"]
   }
 }
 
@@ -735,7 +736,7 @@ project(kafkaSubPath + ':examples') {
   }
 
   checkstyle {
-    configProperties = [importControlFile: "$rootDir/checkstyle/import-control-core.xml"]
+    configProperties = [importControlFile: "$gradleDependenciesPath/checkstyle/import-control-core.xml"]
   }
 }
 
@@ -760,12 +761,12 @@ project(kafkaSubPath + ':clients') {
     def takeFromHash = 16
     if (commitId) {
       commitId = commitId.take(takeFromHash)
-    } else if (file("$rootDir/.git/HEAD").exists()) {
-      def headRef = file("$rootDir/.git/HEAD").text
+    } else if (file("$gradleDependenciesPath/.git/HEAD").exists()) {
+      def headRef = file("$gradleDependenciesPath/.git/HEAD").text
       if (headRef.contains('ref: ')) {
         headRef = headRef.replaceAll('ref: ', '').trim()
-        if (file("$rootDir/.git/$headRef").exists()) {
-          commitId = file("$rootDir/.git/$headRef").text.trim().take(takeFromHash)
+        if (file("$gradleDependenciesPath/.git/$headRef").exists()) {
+          commitId = file("$gradleDependenciesPath/.git/$headRef").text.trim().take(takeFromHash)
         }
       } else {
         commitId = headRef.trim().take(takeFromHash)
@@ -939,8 +940,8 @@ project(kafkaSubPath + ':jmh-benchmarks') {
   }
 
   dependencies {
-      compile project(':clients')
-      compile project(':streams')
+      compile project(kafkaSubPath + ':clients')
+      compile project(kafkaSubPath + ':streams')
       compile 'org.openjdk.jmh:jmh-core:1.18'
       compile 'org.openjdk.jmh:jmh-generator-annprocess:1.18'
       compile 'org.openjdk.jmh:jmh-core-benchmarks:1.18'
@@ -1026,7 +1027,7 @@ project(kafkaSubPath + ':connect:transforms') {
   archivesBaseName = "connect-transforms"
 
   dependencies {
-    compile project(':connect:api')
+    compile project(kafkaSubPath + ':connect:api')
     compile libs.slf4jApi
 
     testCompile libs.easymock

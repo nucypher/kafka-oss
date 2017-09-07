@@ -547,7 +547,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         }
       }
 
-      val mergedPartitionData = reEncryptionHandler.reencryptConsumer(partitionData, request.session.principal) ++ 
+      val mergedPartitionData = reEncryptionHandler.reEncryptConsumer(partitionData, request.session.principal) ++
         unauthorizedForReadPartitionData ++ nonExistingOrUnauthorizedForDescribePartitionData
 
       val fetchedPartitionData = new util.LinkedHashMap[TopicPartition, FetchResponse.PartitionData]()
