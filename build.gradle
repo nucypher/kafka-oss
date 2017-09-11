@@ -354,7 +354,7 @@ subprojects {
   }
 
   // Ignore core since its a scala project
-  if (it.path != ':core') {
+  if (it.path != kafkaSubPath + ':core') {
     // NOTE: Gradles Jacoco plugin does not support "offline instrumentation" this means that classes mocked by PowerMock
     // may report 0 coverage, since the source was modified after initial instrumentation.
     // See https://github.com/jacoco/jacoco/issues/51
@@ -369,7 +369,7 @@ subprojects {
     }
   }
 
-  def coverageGen = it.path == ':core' ? 'reportScoverage' : 'jacocoTestReport'
+  def coverageGen = it.path == kafkaSubPath + ':core' ? 'reportScoverage' : 'jacocoTestReport'
   task reportCoverage(dependsOn: [coverageGen])
 
 }
@@ -413,7 +413,7 @@ def fineTuneEclipseClasspathFile(eclipse, project) {
 
 // Aggregates all jacoco results into the root project directory
 task jacocoRootReport(type: org.gradle.testing.jacoco.tasks.JacocoReport) {
-  def javaProjects = subprojects.findAll { it.path != ':core' }
+  def javaProjects = subprojects.findAll { it.path != kafkaSubPath + ':core' }
 
   description = 'Generates an aggregate report from all subprojects'
   dependsOn(javaProjects.test)
@@ -998,7 +998,7 @@ project(kafkaSubPath + ':connect:api') {
     testCompile libs.junit
 
     testRuntime libs.slf4jlog4j
-    testCompile project(':clients').sourceSets.test.output
+    testCompile project(kafkaSubPath + ':clients').sourceSets.test.output
   }
 
   javadoc {
@@ -1036,7 +1036,7 @@ project(kafkaSubPath + ':connect:transforms') {
     testCompile libs.powermockEasymock
 
     testRuntime libs.slf4jlog4j
-    testCompile project(':clients').sourceSets.test.output
+    testCompile project(kafkaSubPath + ':clients').sourceSets.test.output
   }
 
   javadoc {
@@ -1074,7 +1074,7 @@ project(kafkaSubPath + ':connect:json') {
     testCompile libs.powermockEasymock
 
     testRuntime libs.slf4jlog4j
-    testCompile project(':clients').sourceSets.test.output
+    testCompile project(kafkaSubPath + ':clients').sourceSets.test.output
   }
 
   javadoc {
@@ -1123,7 +1123,7 @@ project(kafkaSubPath + ':connect:runtime') {
     testCompile libs.powermockEasymock
 
     testCompile project("$kafkaSubPath:connect:json")
-    testCompile project(':clients').sourceSets.test.output
+    testCompile project(kafkaSubPath + ':clients').sourceSets.test.output
 
     testRuntime libs.slf4jlog4j
   }
@@ -1176,7 +1176,7 @@ project(kafkaSubPath + ':connect:file') {
     testCompile libs.powermockEasymock
 
     testRuntime libs.slf4jlog4j
-    testCompile project(':clients').sourceSets.test.output
+    testCompile project(kafkaSubPath + ':clients').sourceSets.test.output
   }
 
   javadoc {
